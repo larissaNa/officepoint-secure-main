@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeviceFingerprint } from '@/utils/fingerprint';
-import { Clock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, Loader2, Copy } from 'lucide-react';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -55,13 +55,14 @@ export default function Auth() {
 
     setIsLoading(true);
 
-    // Check device authorization
-    const fingerprint = btoa(`${navigator.userAgent}-${screen.width}x${screen.height}`).substring(0, 32);
-    const { data: deviceData, error: deviceError } = await supabase
+    // Check device authorization with robust comparison
+    const currentFingerprint = getDeviceFingerprint().trim();
+    
+    // Fetch all active devices to compare client-side (handles whitespace/hidden char issues)
+    const { data: devices, error: deviceError } = await supabase
       .from('authorized_devices')
-      .select('is_active')
-      .eq('fingerprint', fingerprint)
-      .maybeSingle();
+      .select('fingerprint, is_active')
+      .eq('is_active', true);
 
     if (deviceError) {
       console.error('Error checking device:', deviceError);
@@ -70,8 +71,14 @@ export default function Auth() {
       return;
     }
 
-    if (!deviceData || !deviceData.is_active) {
-      toast.error('Este dispositivo não está autorizado. Solicite acesso ao administrador.');
+    // Find matching device ignoring whitespace
+    const isAuthorized = devices?.some(d => d.fingerprint.trim() === currentFingerprint);
+
+    if (!isAuthorized) {
+      console.log('Fingerprint mismatch. Current:', currentFingerprint);
+      console.log('Available devices:', devices?.map(d => d.fingerprint));
+      
+      toast.error('Este dispositivo não está autorizado. ID: ' + currentFingerprint.substring(0, 8) + '...');
       setIsLoading(false);
       return;
     }
@@ -123,6 +130,12 @@ export default function Auth() {
 
     toast.success('Conta criada com sucesso!');
     navigate('/');
+  };
+
+  const handleCopyFingerprint = () => {
+    const fingerprint = getDeviceFingerprint();
+    navigator.clipboard.writeText(fingerprint);
+    toast.success('ID do dispositivo copiado!');
   };
 
   return (
@@ -275,6 +288,17 @@ export default function Auth() {
             </TabsContent>
           </Tabs>
         </CardContent>
+        <div className="border-t p-4 text-center">
+          <p className="mb-2 text-xs text-muted-foreground">ID deste dispositivo:</p>
+          <div 
+            className="mx-auto flex max-w-[200px] cursor-pointer items-center justify-center gap-2 rounded bg-muted p-2 text-xs font-mono transition-colors hover:bg-muted/80"
+            onClick={handleCopyFingerprint}
+            title="Clique para copiar"
+          >
+            <span className="truncate">{getDeviceFingerprint()}</span>
+            <Copy className="h-3 w-3 shrink-0" />
+          </div>
+        </div>
       </Card>
     </div>
   );
