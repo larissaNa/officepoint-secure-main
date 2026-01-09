@@ -82,7 +82,7 @@ export default function Ponto() {
     setIsSubmitting(true);
 
     // Verify device authorization
-    const fingerprint = btoa(`${navigator.userAgent}-${screen.width}x${screen.height}`).substring(0, 32);
+    const fingerprint = getDeviceFingerprint();
     const { data: deviceData } = await supabase
       .from('authorized_devices')
       .select('is_active')
