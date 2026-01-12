@@ -128,7 +128,7 @@ export default function Auth() {
       return;
     }
 
-    toast.success('Conta criada com sucesso!');
+    toast.success('Verifique seu e-mail para confirmar o cadastro!');
     navigate('/');
   };
 

@@ -4,7 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Clock, ShieldAlert, Lock, Mail } from 'lucide-react';
+import { Loader2, Clock, ShieldAlert, Lock, Mail, Copy, Check } from 'lucide-react';
+import { getDeviceFingerprint } from '@/utils/fingerprint';
+import { toast } from 'sonner';
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -16,6 +18,7 @@ interface LoginFormProps {
 export function LoginForm({ onLogin, isDeviceAuthorized, isLoading, error }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +26,15 @@ export function LoginForm({ onLogin, isDeviceAuthorized, isLoading, error }: Log
     await onLogin(email, password);
   };
 
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(getDeviceFingerprint());
+    setCopied(true);
+    toast.success('ID copiado para a área de transferência');
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (!isDeviceAuthorized) {
+    const deviceId = getDeviceFingerprint();
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md border-status-absent/30 bg-status-absent/5">
@@ -36,10 +47,30 @@ export function LoginForm({ onLogin, isDeviceAuthorized, isLoading, error }: Log
               Este dispositivo não está autorizado para acessar o sistema.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <p className="text-center text-sm text-muted-foreground">
-              Entre em contato com o administrador para solicitar autorização para este computador.
+              Entre em contato com o administrador e forneça o ID abaixo para liberar o acesso:
             </p>
+            
+            <div className="relative mt-4 rounded-lg border bg-background p-4 text-center">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">ID DO DISPOSITIVO</p>
+              <div className="flex items-center justify-center gap-2">
+                <code className="rounded bg-muted px-2 py-1 text-sm font-mono">{deviceId}</code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleCopyId}
+                  title="Copiar ID"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
