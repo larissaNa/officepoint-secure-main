@@ -112,7 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Logout error, forcing local cleanup:', error);
+        await supabase.auth.signOut({ scope: 'local' });
+      }
+    } catch (error) {
+      console.error('Unexpected error during sign out:', error);
+      await supabase.auth.signOut({ scope: 'local' });
+    }
   };
 
   return (
