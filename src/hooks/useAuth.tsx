@@ -114,13 +114,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Logout error, forcing local cleanup:', error);
-        await supabase.auth.signOut({ scope: 'local' });
-      }
+      if (error) throw error;
     } catch (error) {
-      console.error('Unexpected error during sign out:', error);
-      await supabase.auth.signOut({ scope: 'local' });
+      console.error('Logout error, forcing local cleanup:', error);
+      
+      // Attempt local-only signout via SDK (might fail if session missing)
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (e) {
+        console.error('Local signout failed:', e);
+      }
+
+      // Manual fallback: Clear Supabase keys from localStorage
+      // Supabase keys typically start with 'sb-'
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Force state update
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setIsAdmin(false);
     }
   };
 
