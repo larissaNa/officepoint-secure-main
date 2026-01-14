@@ -78,14 +78,12 @@ export function formatTime(time: string | null): string {
 
 // Calcular estatísticas do dashboard
 export function calculateDashboardStats(pontos: Ponto[]): DashboardStats {
-  const today = new Date().toDateString();
-  const todayPontos = pontos.filter(p => new Date(p.date).toDateString() === today);
-  
+  // Use the provided points directly, as they are already filtered by the dashboard logic
   return {
     totalRegistros: pontos.length,
-    trabalhandoAgora: todayPontos.filter(p => p.status === 'trabalhando').length,
-    finalizadosHoje: todayPontos.filter(p => p.status === 'finalizado').length,
-    aguardandoEntrada: todayPontos.filter(p => p.status === 'aguardando_entrada').length,
+    trabalhandoAgora: pontos.filter(p => p.status === 'trabalhando').length,
+    finalizadosHoje: pontos.filter(p => p.status === 'finalizado').length,
+    aguardandoEntrada: pontos.filter(p => p.status === 'aguardando_entrada').length,
   };
 }
 
@@ -121,22 +119,47 @@ export function getStatusLabel(status: PontoStatus): string {
   return labels[status];
 }
 
+const ensureDate = (value: Date | string): Date => {
+  if (value instanceof Date) return value;
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 // Filtrar pontos
 export function filterPontos(
   pontos: Ponto[],
   search: string,
   status: PontoStatus | 'todos',
-  date: Date | null
+  date: Date | null,
+  shiftId?: string | 'todos'
 ): Ponto[] {
-  return pontos.filter(ponto => {
-    const matchesSearch = search === '' || 
-      ponto.userName.toLowerCase().includes(search.toLowerCase());
-    
+  const filtered = pontos.filter(ponto => {
+    const matchesSearch =
+      search === '' || ponto.userName.toLowerCase().includes(search.toLowerCase());
+
     const matchesStatus = status === 'todos' || ponto.status === status;
-    
-    const matchesDate = !date || 
-      new Date(ponto.date).toDateString() === date.toDateString();
-    
-    return matchesSearch && matchesStatus && matchesDate;
+
+    const matchesDate =
+      !date || ensureDate(ponto.date).toDateString() === date.toDateString();
+
+    const matchesShift =
+      !shiftId || shiftId === 'todos' || ponto.shiftId === shiftId;
+
+    return matchesSearch && matchesStatus && matchesDate && matchesShift;
+  });
+
+  // Ordenar do mais recente para o mais antigo
+  return filtered.sort((a, b) => {
+    const dateA = ensureDate(a.date).getTime();
+    const dateB = ensureDate(b.date).getTime();
+
+    if (dateA !== dateB) {
+      return dateB - dateA;
+    }
+
+    const entradaA = a.entrada || '';
+    const entradaB = b.entrada || '';
+
+    return entradaB.localeCompare(entradaA);
   });
 }

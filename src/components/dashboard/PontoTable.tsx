@@ -55,7 +55,7 @@ export function PontoTable({ pontos }: PontoTableProps) {
                 {index + 1}
               </TableCell>
               <TableCell className="font-medium">{ponto.userName}</TableCell>
-              <TableCell>{formatDate(new Date(ponto.date))}</TableCell>
+              <TableCell>{formatDate(ponto.date as Date)}</TableCell>
               <TableCell className="font-mono">{formatTime(ponto.entrada)}</TableCell>
               <TableCell className="font-mono">{formatTime(ponto.saida)}</TableCell>
               <TableCell className="font-mono font-medium">

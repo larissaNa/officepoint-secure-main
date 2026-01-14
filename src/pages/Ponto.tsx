@@ -3,7 +3,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Clock, LogIn, LogOut, Loader2, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
@@ -16,6 +15,7 @@ interface Ponto {
   entrada: string | null;
   saida: string | null;
   status: string;
+  shift_id: string | null;
 }
 
 interface UserShift {
@@ -39,8 +39,9 @@ const statusLabels: Record<string, string> = {
 
 export default function Ponto() {
   const { user, profile } = useAuth();
-  const [ponto, setPonto] = useState<Ponto | null>(null);
+  const [pontos, setPontos] = useState<Ponto[]>([]);
   const [userShifts, setUserShifts] = useState<UserShift[]>([]);
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,24 +58,58 @@ export default function Ponto() {
     setIsLoading(true);
     const today = format(new Date(), 'yyyy-MM-dd');
 
-    const [pontoRes, shiftsRes] = await Promise.all([
+    const [pontosRes, shiftsRes] = await Promise.all([
       supabase
         .from('pontos')
         .select('*')
         .eq('user_id', user.id)
         .eq('date', today)
-        .maybeSingle(),
+        .order('created_at', { ascending: true }),
       supabase
         .from('user_shifts')
         .select('id, shifts(*)')
         .eq('user_id', user.id),
     ]);
 
-    if (pontoRes.data) setPonto(pontoRes.data);
-    if (shiftsRes.data) setUserShifts(shiftsRes.data as unknown as UserShift[]);
+    const pontosData = (pontosRes.data || []) as Ponto[];
+    setPontos(pontosData);
+
+    const shiftsData = (shiftsRes.data || []) as unknown as UserShift[];
+    if (shiftsData) {
+      setUserShifts(shiftsData);
+    }
+
+    if (shiftsData && shiftsData.length > 0 && !selectedShiftId) {
+      const workingPonto = pontosData.find((p) => p.status === 'trabalhando' && p.shift_id);
+      if (workingPonto && workingPonto.shift_id) {
+        setSelectedShiftId(workingPonto.shift_id);
+      } else {
+        setSelectedShiftId(shiftsData[0].shifts.id);
+      }
+    }
     
     setIsLoading(false);
   };
+
+  const currentPonto: Ponto | null = (() => {
+    if (userShifts.length === 0) {
+      return pontos[0] || null;
+    }
+    if (!selectedShiftId) return null;
+
+    // Try to find exact match for the selected shift
+    const exactMatch = pontos.find((p) => p.shift_id === selectedShiftId);
+    if (exactMatch) return exactMatch;
+
+    // Fallback: If no exact match, check for legacy records (null shift_id)
+    // and associate them with the first shift to prevent "missing" records for existing users
+    const isFirstShift = userShifts.length > 0 && userShifts[0].shifts.id === selectedShiftId;
+    if (isFirstShift) {
+      return pontos.find(p => p.shift_id === null) || null;
+    }
+
+    return null;
+  })();
 
   const handleRegistrarEntrada = async () => {
     if (!user) return;
@@ -98,6 +133,17 @@ export default function Ponto() {
     const now = format(new Date(), 'HH:mm:ss');
     const today = format(new Date(), 'yyyy-MM-dd');
 
+    let shiftIdToUse: string | null = null;
+    if (userShifts.length > 0) {
+      const effectiveShiftId = selectedShiftId || userShifts[0]?.shifts.id || null;
+      if (!effectiveShiftId) {
+        setIsSubmitting(false);
+        toast.error('Selecione um turno para registrar entrada');
+        return;
+      }
+      shiftIdToUse = effectiveShiftId;
+    }
+
     const { data, error } = await supabase
       .from('pontos')
       .insert({
@@ -105,13 +151,13 @@ export default function Ponto() {
         date: today,
         entrada: now,
         status: 'trabalhando',
+        shift_id: shiftIdToUse,
       })
       .select()
       .single();
 
-    setIsSubmitting(false);
-
     if (error) {
+      setIsSubmitting(false);
       if (error.code === '23505') {
         toast.error('Entrada já registrada hoje');
       } else {
@@ -120,12 +166,13 @@ export default function Ponto() {
       return;
     }
 
-    setPonto(data);
+    setIsSubmitting(false);
+    fetchData();
     toast.success('Entrada registrada com sucesso!');
   };
 
   const handleRegistrarSaida = async () => {
-    if (!user || !ponto) return;
+    if (!user || !pontos.length) return;
     
     setIsSubmitting(true);
 
@@ -145,24 +192,31 @@ export default function Ponto() {
 
     const now = format(new Date(), 'HH:mm:ss');
 
+    const pontoAlvo = currentPonto;
+    if (!pontoAlvo) {
+      setIsSubmitting(false);
+      toast.error('Nenhum registro de entrada encontrado para este turno');
+      return;
+    }
+
     const { data, error } = await supabase
       .from('pontos')
       .update({
         saida: now,
         status: 'finalizado',
       })
-      .eq('id', ponto.id)
+      .eq('id', pontoAlvo.id)
       .select()
       .single();
 
-    setIsSubmitting(false);
-
     if (error) {
+      setIsSubmitting(false);
       toast.error('Erro ao registrar saída');
       return;
     }
 
-    setPonto(data);
+    setIsSubmitting(false);
+    fetchData();
     toast.success('Saída registrada com sucesso!');
   };
 
@@ -193,7 +247,6 @@ export default function Ponto() {
         </CardContent>
       </Card>
 
-      {/* User Shifts */}
       {userShifts.length > 0 && (
         <Card>
           <CardHeader>
@@ -205,9 +258,14 @@ export default function Ponto() {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {userShifts.map((us) => (
-                <Badge key={us.id} variant="secondary" className="text-sm">
+                <Button
+                  key={us.id}
+                  variant={selectedShiftId === us.shifts.id ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setSelectedShiftId(us.shifts.id)}
+                >
                   {us.shifts.name} ({us.shifts.start_time} - {us.shifts.end_time})
-                </Badge>
+                </Button>
               ))}
             </div>
           </CardContent>
@@ -216,39 +274,41 @@ export default function Ponto() {
 
       {/* Ponto Status */}
       <Card>
-        <CardHeader>
-          <CardTitle>Registro de Hoje</CardTitle>
-          <CardDescription>
-            {ponto
-              ? `Status: ${statusLabels[ponto.status] || ponto.status}`
-              : 'Nenhum registro ainda'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+          <CardHeader>
+            <CardTitle>Registro de Hoje</CardTitle>
+            <CardDescription>
+            {currentPonto
+              ? `Status: ${statusLabels[currentPonto.status] || currentPonto.status}`
+              : userShifts.length > 0
+                ? 'Nenhum registro ainda para este turno'
+                : 'Nenhum registro ainda'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
           {/* Entrada/Saída Info */}
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <LogIn className="h-4 w-4" />
-                <span className="text-sm">Entrada</span>
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <LogIn className="h-4 w-4" />
+                  <span className="text-sm">Entrada</span>
+                </div>
+                <p className="mt-2 text-2xl font-bold">
+                {currentPonto?.entrada || '--:--'}
+                </p>
               </div>
-              <p className="mt-2 text-2xl font-bold">
-                {ponto?.entrada || '--:--'}
-              </p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <LogOut className="h-4 w-4" />
-                <span className="text-sm">Saída</span>
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <LogOut className="h-4 w-4" />
+                  <span className="text-sm">Saída</span>
+                </div>
+                <p className="mt-2 text-2xl font-bold">
+                {currentPonto?.saida || '--:--'}
+                </p>
               </div>
-              <p className="mt-2 text-2xl font-bold">
-                {ponto?.saida || '--:--'}
-              </p>
             </div>
-          </div>
 
           {/* Action Buttons */}
-          {!ponto && (
+          {!currentPonto && (
             <Button
               size="lg"
               className="w-full"
@@ -264,7 +324,7 @@ export default function Ponto() {
             </Button>
           )}
 
-          {ponto && ponto.status === 'trabalhando' && (
+          {currentPonto && currentPonto.status === 'trabalhando' && (
             <Button
               size="lg"
               variant="secondary"
@@ -281,7 +341,7 @@ export default function Ponto() {
             </Button>
           )}
 
-          {ponto && ponto.status === 'finalizado' && (
+          {currentPonto && currentPonto.status === 'finalizado' && (
             <div className="flex items-center justify-center gap-2 rounded-lg bg-green-500/10 py-4 text-green-600">
               <CheckCircle className="h-5 w-5" />
               <span className="font-medium">Jornada finalizada</span>

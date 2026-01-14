@@ -64,4 +64,5 @@ export interface PontoFilter {
   search: string;
   status: PontoStatus | 'todos';
   date: Date | null;
+  shiftId?: string | 'todos';
 }

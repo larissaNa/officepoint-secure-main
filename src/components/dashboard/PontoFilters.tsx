@@ -13,6 +13,7 @@ import { PontoStatus, PontoFilter } from '@/types';
 interface PontoFiltersProps {
   filters: PontoFilter;
   onFiltersChange: (filters: PontoFilter) => void;
+  shiftOptions?: { id: string; name: string }[];
 }
 
 const statusOptions: { value: PontoStatus | 'todos'; label: string }[] = [
@@ -25,12 +26,13 @@ const statusOptions: { value: PontoStatus | 'todos'; label: string }[] = [
   { value: 'saida_nao_registrada', label: 'Saída não registrada' },
 ];
 
-export function PontoFilters({ filters, onFiltersChange }: PontoFiltersProps) {
+export function PontoFilters({ filters, onFiltersChange, shiftOptions }: PontoFiltersProps) {
   const clearFilters = () => {
-    onFiltersChange({ search: '', status: 'todos', date: null });
+    onFiltersChange({ search: '', status: 'todos', date: null, shiftId: 'todos' });
   };
 
-  const hasActiveFilters = filters.search || filters.status !== 'todos' || filters.date;
+  const hasActiveFilters =
+    filters.search || filters.status !== 'todos' || filters.date || (filters.shiftId && filters.shiftId !== 'todos');
 
   return (
     <div className="flex flex-wrap items-center gap-4">
@@ -59,6 +61,27 @@ export function PontoFilters({ filters, onFiltersChange }: PontoFiltersProps) {
           ))}
         </SelectContent>
       </Select>
+
+      {shiftOptions && shiftOptions.length > 0 && (
+        <Select
+          value={filters.shiftId || 'todos'}
+          onValueChange={(value) =>
+            onFiltersChange({ ...filters, shiftId: value === 'todos' ? 'todos' : (value as string) })
+          }
+        >
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Turno" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os Turnos</SelectItem>
+            {shiftOptions.map((shift) => (
+              <SelectItem key={shift.id} value={shift.id}>
+                {shift.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <Popover>
         <PopoverTrigger asChild>
